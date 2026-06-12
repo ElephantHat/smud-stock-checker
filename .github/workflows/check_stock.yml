@@ -2,8 +2,8 @@ name: Check Smud Stock Status
 
 on:
   schedule:
-    # Run hourly at the top of the hour
-    - cron: '0 * * * *'
+    # Run every 2 hours
+    - cron: '0 */2 * * *'
   workflow_dispatch:
     # Allow manual triggering from GitHub UI
 

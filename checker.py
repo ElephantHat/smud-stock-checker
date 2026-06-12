@@ -7,6 +7,22 @@ import re
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 STATE_FILE = os.path.join(SCRIPT_DIR, "state.json")
 
+# Load local .env file if it exists (for local testing)
+def load_env():
+    env_path = os.path.join(SCRIPT_DIR, ".env")
+    if os.path.exists(env_path):
+        try:
+            with open(env_path, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        key, value = line.split("=", 1)
+                        os.environ[key.strip()] = value.strip()
+        except Exception as e:
+            print(f"Warning: Could not read .env file: {e}")
+
+load_env()
+
 def load_state():
     """Load stock status state from state.json."""
     if os.path.exists(STATE_FILE):
