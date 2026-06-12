@@ -1,0 +1,7 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+state_changed.txt
+state_test.json

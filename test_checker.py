@@ -35,37 +35,38 @@ class TestStockCheckerState(unittest.TestCase):
         return None
 
     @patch('checker.check_stock_status')
-    @patch('checker.send_email_notification')
-    def test_out_of_stock_initially(self, mock_send_email, mock_check_stock):
+    @patch('checker.send_slack_notification')
+    def test_out_of_stock_initially(self, mock_send_slack, mock_check_stock):
         """Test behavior when the item is out of stock and state.json does not exist."""
         mock_check_stock.return_value = False
         
         checker.main()
         
-        # Should not try to send email
-        mock_send_email.assert_not_called()
+        # Should not try to send Slack notification
+        mock_send_slack.assert_not_called()
         # Should not create state_changed.txt because status didn't change (was False, stays False)
         self.assertFalse(os.path.exists(self.state_changed_file))
         # state.json is not created if state didn't change from default (False)
         self.assertIsNone(self.get_test_state())
 
     @patch('checker.check_stock_status')
-    @patch('checker.send_email_notification')
-    def test_transitions_to_in_stock_and_emails(self, mock_send_email, mock_check_stock):
-        """Test transitioning from out of stock to in stock."""
+    @patch('checker.send_slack_notification')
+    def test_transitions_to_in_stock(self, mock_send_slack, mock_check_stock):
+        """Test transitioning from out of stock to in stock updates the state and sends a Slack notification."""
         mock_check_stock.return_value = True
-        mock_send_email.return_value = True
+        mock_send_slack.return_value = True
         
-        # Write initial state: out of stock, not notified
+        # Write initial state: out of stock
         checker.save_state({"last_status": False, "notified": False})
         if os.path.exists(self.state_changed_file):
             os.remove(self.state_changed_file)
 
         checker.main()
 
-        # Should send email
-        mock_send_email.assert_called_once()
-        # State should be updated to notified: true
+        # Should send Slack notification
+        mock_send_slack.assert_called_once()
+        self.assertIn("IN STOCK", mock_send_slack.call_args[0][0])
+        # State should be updated to in stock (last_status=True, notified=True)
         state = self.get_test_state()
         self.assertTrue(state["notified"])
         self.assertTrue(state["last_status"])
@@ -73,42 +74,44 @@ class TestStockCheckerState(unittest.TestCase):
         self.assertTrue(os.path.exists(self.state_changed_file))
 
     @patch('checker.check_stock_status')
-    @patch('checker.send_email_notification')
-    def test_already_in_stock_no_second_email(self, mock_send_email, mock_check_stock):
-        """Test that if the item is in stock but we already notified, we don't spam emails."""
+    @patch('checker.send_slack_notification')
+    def test_already_in_stock_no_state_change(self, mock_send_slack, mock_check_stock):
+        """Test that if the item was already in stock, no state change or notification is sent."""
         mock_check_stock.return_value = True
         
-        # Write initial state: already notified
+        # Write initial state: already in stock
         checker.save_state({"last_status": True, "notified": True})
         if os.path.exists(self.state_changed_file):
             os.remove(self.state_changed_file)
 
         checker.main()
 
-        # Should NOT send email
-        mock_send_email.assert_not_called()
-        # State should remain notified: true
+        # Should NOT send Slack notification
+        mock_send_slack.assert_not_called()
+        # State should remain in stock
         state = self.get_test_state()
-        self.assertTrue(state["notified"])
+        self.assertTrue(state["last_status"])
         # Should not flag state change
         self.assertFalse(os.path.exists(self.state_changed_file))
 
     @patch('checker.check_stock_status')
-    @patch('checker.send_email_notification')
-    def test_goes_out_of_stock_resets_notified(self, mock_send_email, mock_check_stock):
-        """Test that going back out of stock resets the notified flag."""
+    @patch('checker.send_slack_notification')
+    def test_goes_out_of_stock(self, mock_send_slack, mock_check_stock):
+        """Test that going back out of stock resets the state and sends an out-of-stock notification."""
         mock_check_stock.return_value = False
+        mock_send_slack.return_value = True
         
-        # Write initial state: was in stock and notified
+        # Write initial state: was in stock
         checker.save_state({"last_status": True, "notified": True})
         if os.path.exists(self.state_changed_file):
             os.remove(self.state_changed_file)
 
         checker.main()
 
-        # Should NOT send email
-        mock_send_email.assert_not_called()
-        # State should be reset to notified: false, last_status: false
+        # Should send Slack notification
+        mock_send_slack.assert_called_once()
+        self.assertIn("OUT OF STOCK", mock_send_slack.call_args[0][0])
+        # State should be reset to out of stock
         state = self.get_test_state()
         self.assertFalse(state["notified"])
         self.assertFalse(state["last_status"])

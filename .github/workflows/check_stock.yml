@@ -25,12 +25,7 @@ jobs:
 
     - name: Run Stock Checker
       env:
-        SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
-        SMTP_PORT: ${{ secrets.SMTP_PORT }}
-        SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
-        SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
-        RECEIVER_EMAIL: ${{ secrets.RECEIVER_EMAIL }}
-        SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
       run: python checker.py
 
     - name: Commit and push state changes

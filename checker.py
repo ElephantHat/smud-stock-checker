@@ -2,9 +2,6 @@ import os
 import urllib.request
 import json
 import re
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 
 # File path for tracking state, stored in the same directory as the script
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -72,67 +69,29 @@ def check_stock_status():
     print("Warning: Could not parse stock status from HTML page structure.")
     return None
 
-def send_email_notification():
-    """Send an email notification using SMTP settings from environment variables."""
-    # Retrieve configuration from environment variables (GitHub secrets)
-    smtp_server = os.environ.get("SMTP_SERVER")
-    smtp_port_str = os.environ.get("SMTP_PORT", "587")
-    smtp_user = os.environ.get("SMTP_USERNAME")
-    smtp_pass = os.environ.get("SMTP_PASSWORD")
-    receiver_email = os.environ.get("RECEIVER_EMAIL")
-    sender_email = os.environ.get("SENDER_EMAIL") or smtp_user
-
-    # Validate that we have the minimum requirements to send email
-    missing = [k for k, v in {
-        "SMTP_SERVER": smtp_server,
-        "SMTP_USERNAME": smtp_user,
-        "SMTP_PASSWORD": smtp_pass,
-        "RECEIVER_EMAIL": receiver_email
-    }.items() if not v]
-
-    if missing:
-        print(f"SKIPPING EMAIL: Missing environment variables: {', '.join(missing)}")
+def send_slack_notification(message):
+    """Send a notification message to Slack via Incoming Webhook."""
+    webhook_url = os.environ.get("SLACK_WEBHOOK_URL")
+    if not webhook_url:
+        print("SKIPPING SLACK: Missing SLACK_WEBHOOK_URL environment variable.")
         return False
 
-    try:
-        smtp_port = int(smtp_port_str)
-    except ValueError:
-        print(f"Invalid SMTP_PORT: '{smtp_port_str}'. Defaulting to 587.")
-        smtp_port = 587
-
-    print(f"Sending email notification to {receiver_email} via {smtp_server}:{smtp_port}...")
-
-    # Create message
-    msg = MIMEMultipart()
-    msg['From'] = sender_email
-    msg['To'] = receiver_email
-    msg['Subject'] = "🚨 IN STOCK: NeoCharge Smart Splitter 14-50 at SMUD!"
-
-    body = (
-        "Good news!\n\n"
-        "The NeoCharge Smart Splitter (NEMA 14-50 variant) is back in stock at the SMUD Energy Store.\n\n"
-        "Product Link: https://smudenergystore.com/EV-Chargers/P-NEOSMRTSP.html\n\n"
-        "This is an automated notification from your GitHub Action stock checker."
-    )
-    msg.attach(MIMEText(body, 'plain'))
+    headers = {
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "text": message
+    }
 
     try:
-        # Establish connection. If port is 465, use SMTP_SSL. Otherwise use standard SMTP and STARTTLS.
-        if smtp_port == 465:
-            server = smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=10)
-        else:
-            server = smtplib.SMTP(smtp_server, smtp_port, timeout=10)
-            server.ehlo()
-            server.starttls()
-            server.ehlo()
-            
-        server.login(smtp_user, smtp_pass)
-        server.sendmail(sender_email, receiver_email, msg.as_string())
-        server.close()
-        print("Email sent successfully!")
-        return True
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(webhook_url, data=data, headers=headers, method="POST")
+        with urllib.request.urlopen(req, timeout=10) as response:
+            res_body = response.read().decode("utf-8")
+            print(f"Slack response: {res_body}")
+            return res_body == "ok"
     except Exception as e:
-        print(f"Failed to send email: {e}")
+        print(f"Failed to send Slack notification: {e}")
         return False
 
 def main():
@@ -151,23 +110,32 @@ def main():
     if current_stock:
         # It's in stock. If we haven't notified the user yet, notify them now.
         if not state.get('notified'):
-            print("Product is IN STOCK and we have not notified the user yet. Sending email...")
-            email_sent = send_email_notification()
-            if email_sent:
+            print("Product is IN STOCK. Sending Slack notification...")
+            msg = (
+                "🚨 *IN STOCK:* NeoCharge Smart Splitter 14-50 at SMUD!\n"
+                "Product Link: https://smudenergystore.com/EV-Chargers/P-NEOSMRTSP.html"
+            )
+            slack_sent = send_slack_notification(msg)
+            if slack_sent:
                 state['notified'] = True
                 state['last_status'] = True
                 state_changed = True
             else:
-                print("Failed to send notification email. Will retry on next execution.")
+                print("Failed to send Slack notification. Will retry on next execution.")
         else:
             print("Product is in stock, but user was already notified. No action taken.")
     else:
-        # It's out of stock. If our state still says "notified", reset it so they can be notified next time it restocks.
+        # It's out of stock. If our state still says "notified", reset it and notify.
         if state.get('notified') or state.get('last_status'):
-            print("Product is OUT OF STOCK. Resetting notification flag for next restock.")
-            state['notified'] = False
-            state['last_status'] = False
-            state_changed = True
+            print("Product is OUT OF STOCK. Sending Slack notification and resetting state...")
+            msg = "ℹ️ *OUT OF STOCK:* NeoCharge Smart Splitter 14-50 is now out of stock at SMUD."
+            slack_sent = send_slack_notification(msg)
+            if slack_sent:
+                state['notified'] = False
+                state['last_status'] = False
+                state_changed = True
+            else:
+                print("Failed to send Slack notification. Will retry on next execution.")
         else:
             print("Product is out of stock. User not notified (as expected). No action taken.")
 
