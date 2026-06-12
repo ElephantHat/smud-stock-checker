@@ -1,0 +1,49 @@
+name: Check Smud Stock Status
+
+on:
+  schedule:
+    # Run hourly at the top of the hour
+    - cron: '0 * * * *'
+  workflow_dispatch:
+    # Allow manual triggering from GitHub UI
+
+permissions:
+  contents: write
+
+jobs:
+  check-and-notify:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-type: '3.x'
+
+    - name: Run Stock Checker
+      env:
+        SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
+        SMTP_PORT: ${{ secrets.SMTP_PORT }}
+        SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+        SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+        RECEIVER_EMAIL: ${{ secrets.RECEIVER_EMAIL }}
+        SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
+      run: python checker.py
+
+    - name: Commit and push state changes
+      run: |
+        if [ -f state_changed.txt ]; then
+          echo "State file changed. Committing back to repository..."
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add state.json
+          rm state_changed.txt
+          git commit -m "Update stock checker state [skip ci]"
+          git push
+        else
+          echo "No state change detected."
+        fi
+      shell: bash
